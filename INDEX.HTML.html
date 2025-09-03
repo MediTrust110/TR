@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediTrust Pharmacy - Billing System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+        }
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .gradient-bg-2 {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+        .gradient-bg-3 {
+            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+        }
+        .print-only {
+            display: none;
+        }
+        @media print {
+            .no-print {
+                display: none !important;
+            }
+            .print-only {
+                display: block;
+            }
+            body {
+                background: white !important;
+            }
+            .invoice-container {
+                box-shadow: none;
+                background: white;
+            }
+        }
+        .nav-item {
+            transition: all 0.3s ease;
+        }
+        .nav-item:hover {
+            transform: translateY(-2px);
+        }
+        .fade-enter-active, .fade-leave-active {
+            transition: opacity 0.3s ease;
+        }
+        .fade-enter-from, .fade-leave-to {
+            opacity: 0;
+        }
+        .invoice-container {
+            width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: white;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .password-modal {
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body class="gradient-bg min-h-screen">
+    <div id="app">
+        <!-- Header -->
+        <header class="glass-effect sticky top-0 z-10 border-b border-indigo-200">
+            <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="h-10 w-10 rounded-2xl bg-indigo-600 text-white grid place-items-center font-bold">
+                        <i class="fas fa-prescription"></i>
+                    </div>
+                    <div>
+                        <div class="font-bold text-lg text-indigo-900">MediTrust Pharmacy</div>
+                        <div class="text-xs text-indigo-600">Billing • Inventory • Reports</div>
+                    </div>
+                </div>
+
+                <nav class="flex gap-1">
+                    <button v-for="tab in tabs" :key="tab" 
+                        @click="currentTab = tab"
+                        :class="currentTab === tab ? 
+                        'bg-indigo-600 text-white' : 
+                        'text-indigo-700 hover:bg-indigo-100'"
+                        class="nav-item px-4 py-2 rounded-xl text-sm font-medium">
+                        {{ tab }}
+                    </button>
+                </nav>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="max-w-7xl mx-auto px-4 py-6">
+            <!-- Dashboard -->
+            <transition name="fade" mode="out-in">
+                <div v-if="currentTab === 'Dashboard'" class="grid lg:grid-cols-3 gap-6" key="dashboard">
+                    <div class="lg:col-span-2 space-y-6">
+                        <div class="glass-effect rounded-2xl p-6">
+                            <h2 class="text-xl font-semibold text-indigo-800 mb-4">Today's Summary</h2>
+                            <div class="grid md:grid-cols-5 gap-4 text-sm">
+                                <div class="p-4 bg-emerald-100 rounded-2xl">
+                                    <div class="text-indigo-700">Revenue</div>
+                                    <div class="text-2xl font-bold text-emerald-700">₹{{ todayRevenue.toFixed(2) }}</div>
+                                </div>
+                                <div class="p-4 bg-indigo-100 rounded-2xl">
+                                    <div class="text-indigo-700">Profit</div>
+                                    <div class="text-2xl font-bold text-indigo-700">₹{{ todayProfit.toFixed(2) }}</div>
+                                </div>
+                                <div class="p-4 bg-amber-100 rounded-2xl">
+                                    <div class="text-indigo-700">Bills</div>
+                                    <div class="text-2xl font-bold text-amber-700">{{ todayBills }}</div>
+                                </div>
+                                <!-- Added Stock Value at MRP -->
+                                <div class="p-4 bg-blue-100 rounded-2xl">
+                                    <div class="text-indigo-700">Stock Value (MRP)</div>
+                                    <div class="text-2xl font-bold text-blue-700">₹{{ totalStockValueAtMRP.toFixed(2) }}</div>
+                                </div>
+                                <!-- Added Stock Value at Cost -->
+                                <div class="p-4 bg-violet-100 rounded-2xl">
+                                    <div class="text-indigo-700">Stock Value (Cost)</div>
+                                    <div class="text-2xl font-bold text-violet-700">₹{{ totalStockValueAtCost.toFixed(2) }}</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="glass-effect rounded-2xl p-6">
+                            <h2 class="text-xl font-semibold text-indigo-800 mb-4">Low Stock Alert</h2>
+                            <div class="grid md:grid-cols-2 gap-4">
+                                <div v-for="item in lowStockItems" :key="item.id" class="flex items-center gap-3 p-3 border border-amber-300 rounded-2xl bg-amber-50">
+                                    <div class="h-10 w-10 rounded-xl bg-amber-500 text-white grid place-items-center font-bold">
+                                        {{ item.name.charAt(0) }}
+                                    </div>
+                                    <div class="flex-1">
+                                        <div class="font-medium text-indigo-900">{{ item.name }}</div>
+                                        <div class="text-xs text-amber-700">Only {{ item.stock }} left in stock</div>
+                                    </div>
+                                </div>
+                                <div v-if="lowStockItems.length === 0" class="col-span-2 text-center text-indigo-700 py-4">
+                                    No low stock items
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-6">
+                        <div class="glass-effect rounded-2xl p-6">
+                            <h2 class="text-xl font-semibold text-indigo-800 mb-4">Shop Details</h2>
+                            <div class="text-sm space-y-2">
+                                <div><b class="text-indigo-800">MediTrust Pharmacy</b></div>
+                                <div class="text-indigo-700">Main Road, Lalpur, Ranchi, Jharkhand - 834001</div>
+                                <div class="text-indigo-700">Phone: 0651-2220999</div>
+                                <div class="text-indigo-700">GSTIN: 20ABCDE1234F1Z5</div>
+                                <div class="text-indigo-700">Email: meditrust@example.com</div>
+                            </div>
+                        </div>
+                        
+                        <div class="glass-effect rounded-2xl p-6">
+                            <h2 class="text-xl font-semibold text-indigo-800 mb-4">Quick Actions</h2>
+                            <div class="space-y-3">
+                                <button @click="currentTab = 'Billing'" class="w-full text-left p-3 bg-indigo-100 hover:bg-indigo-200 rounded-xl text-indigo-700 font-medium">
+                                    <i class="fas fa-receipt mr-2"></i> Create New Bill
+                                </button>
+                                <button @click="currentTab = 'Inventory'" class="w-full text-left p-3 bg-emerald-100 hover:bg-emerald-200 rounded-xl text-emerald-700 font-medium">
+                                    <i class="fas fa-pills mr-2"></i> Manage Inventory
+                                </button>
+                                <button @click="currentTab = 'Reports'" class="w-full text-left p-3 bg-purple-100 hover:bg-purple-200 rounded-xl text-purple-700 font-medium">
+                                    <i class="fas fa-chart-bar mr-2"></i> View Reports
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </transition>
+
+            <!-- Billing Section -->
+            <transition name="fade" mode="out-in">
+                <div v-if="currentTab === 'Billing'" class="space-y-6" key="billing">
+                    <div class="glass-effect rounded-2xl p-6">
+                        <h2 class="text-xl font-semibold text-indigo-800 mb-4">Create Bill</h2>
+                        
+                        <div class="grid md:grid-cols-4 gap-4 mb-6">
+                            <div>
+                                <label class="block text-sm font-medium text-indigo-700 mb-1">Customer Name</label>
+                                <input v-model="currentBill.customerName" type="text" class="w-full rounded-xl border border-indigo-200 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Optional">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-indigo-700 mb-1">Phone Number</label>
+                                <input v-model="currentBill.customerPhone" type="text" class="w-full rounded-xl border border-indigo-200 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Optional">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-indigo-700 mb-1">Search Medicine</label>
+                                <input v-model="searchQuery" @keyup.enter="searchMedicine" type="text" class="w-full rounded-xl border border-indigo-200 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Medicine name">
+                            </div>
+                            <div class="flex items-end">
+                                <button @click="searchMedicine" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-xl">
+                                    <i class="fas fa-search mr-2"></i> Search
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="grid md:grid-cols-3 gap-6">
+                            <div class="md:col-span-2">
+                                <div class="rounded-2xl border border-indigo-200 overflow-hidden">
+                                    <table class="w-full text-sm">
+                                        <thead class="bg-indigo-100">
+                                            <tr>
+                                                <th class="p-3 text-left text-indigo-800">Medicine</th>
+                                                <th class="p-3 text-indigo-800">Qty</th>
+                                                <th class="p-3 text-indigo-800">Price</th>
+                                                <th class="p-3 text-indigo-800">Amount</th>
+                                                <th class="p-3 text-indigo-800"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-for="(item, index) in currentBill.items" :key="index" class="border-t border-indigo-100">
+                                                <td class="p-3">{{ item.name }}</td>
+                                                <td class="p-3 text-center">
+                                                    <input type="number" min="1" :max="item.maxQty" v-model="item.qty" @change="updateItemQuantity(index)" class="w-16 text-center border border-indigo-200 rounded-lg px-2 py-1">
+                                                </td>
+                                                <td class="p-3 text-center">₹{{ item.price.toFixed(2) }}</td>
+                                                <td class="p-3 text-right">₹{{ calculateItemTotal(item).toFixed(2) }}</td>
+                                                <td class="p-3 text-center">
+                                                    <button @click="removeBillItem(index)" class="text-rose-600 hover:text-rose-800">
+                                                        <i class="fas fa-times"></i>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                            <tr v-if="currentBill.items.length === 0">
+                                                <td colspan="5" class="p-4 text-center text-indigo-700">
+                                                    No items added to bill
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div class="grid md:grid-cols-2 gap-6 mt-6">
+                                    <div class="space-y-4">
+                                        <div class="flex items-center gap-3">
+                                            <label class="block text-sm font-medium text-indigo-700">Bill Discount:</label>
+                                            <input type="number" min="0" max="100" v-model="currentBill.discount" @change="validateDiscount" class="w-20 text-center border border-indigo-200 rounded-lg px-2 py-1"> %
+                                        </div>
+                                        <div class="flex justify-between">
+                                            <div class="text-sm text-indigo-700">Subtotal:</div>
+                                            <div class="font-medium text-indigo-900">₹{{ calculateSubtotal().toFixed(2) }}</div>
+                                        </div>
+                                        <div class="flex justify-between">
+                                            <div class="text-sm text-indigo-700">Discount:</div>
+                                            <div class="font-medium text-rose-600">-₹{{ calculateTotalDiscount().toFixed(2) }}</div>
+                                        </div>
+                                    </div>
+                                    <div class="flex flex-col justify-end">
+                                        <div class="flex justify-between items-center mb-4">
+                                            <div class="text-lg font-bold text-indigo-700">Total:</div>
+                                            <div class="text-2xl font-bold text-indigo-900">₹{{ calculateBillTotal().toFixed(2) }}</div>
+                                        </div>
+                                        <button @click="completeSale" :disabled="currentBill.items.length === 0" :class="currentBill.items.length === 0 ? 'bg-gray-400' : 'bg-emerald-600 hover:bg-emerald-700'" class="text-white font-medium py-2 px-6 rounded-xl">
+                                            <i class="fas fa-check-circle mr-2"></i> Complete Sale
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <div class="glass-effect rounded-2xl p-4 border border-indigo-200">
+                                    <h3 class="font-semibold text-indigo-800 mb-3">Available Medicines</h3>
+                                    <div class="space-y-3 max-h-96 overflow-auto">
+                                        <div v-for="medicine in filteredMedicines" :key="medicine.id" @click="addToBill(medicine)" class="p-3 border border-indigo-200 rounded-xl hover:bg-indigo-50 cursor-pointer">
+                                            <div class="font-medium text-indigo-900">{{ medicine.name }}</div>
+                                            <div class="text-xs text-indigo-600">MRP: ₹{{ medicine.mrp.toFixed(2) }} | Stock: {{ medicine.stock }}</div>
+                                        </div>
+                                        <div v-if="filteredMedicines.length === 0" class="text-center text-indigo-700 py-4">
+                                            No medicines found
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </transition>
+
+            <!-- Inventory Section -->
+            <transition name="fade" mode="out-in">
+                <div v-if="currentTab === 'Inventory'" class="space-y-6" key="inventory">
+                    <div class="glass-effect rounded-2xl p-6">
+                        <h2 class="text-xl font-semibold text-indigo-800 mb-4">Medicine Inventory</h2>
+                        
+                        <div class="grid md:grid-cols-5 gap-4 mb-6">
+                            <div>
+                                <label class="block text-sm font-medium text-indigo-700 mb-1">Medicine Name</label>
+                                <input v-model="newMedicine.name" type="text" class="w-full rounded-xl border border-indigo-200 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Enter name">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-indigo-700 mb-1">Category</label>
+                                <input v-model="newMedicine.category" type="text" class="w-full rounded-xl border border-indigo-200 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Category">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-indigo-700 mb-1">Purchase Price (₹)</label>
+                                <input v-model="newMedicine.purchasePrice" type="number" min="0" step="0.01" class="w-full rounded-xl border border-indigo-200 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0.00">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-indigo-700 mb-1">MRP (₹)</label>
+                                <input v-model="newMedicine.mrp" type="number" min="0" step="0.01" class="w-full rounded-xl border border-indigo-200 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0.00">
+                            </div>
+                            <div class="flex items-end">
+                                <button @click="addMedicine" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-xl">
+                                    <i class="fas fa-plus mr-2"></i> Add Medicine
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="grid md:grid-cols-4 gap-4 mb-6">
+                            <div>
+                                <label class="block text-sm font-medium text-indigo-700 mb-1">Stock</label>
+                                <input v-model="newMedicine.stock" type="number" min="0" class="w-full rounded-xl border border-indigo-200 px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Quantity">
+                            </div>
+                            <div class="md:col-span-3 flex items-end">
+                                <div class="text-xs text-indigo-600">Fill all fields and click Add Medicine to add to inventory</div>
+                            </div>
+                        </div>
+
+                        <div class="rounded-2xl border border-indigo-200 overflow-hidden">
+                            <table class="w-full text-sm">
+                                <thead class="bg-indigo-100">
+                                    <tr>
+                                        <th class="p-3 text-left text-indigo-800">Medicine Name</th>
+                                        <th class="p-3 text-indigo-800">Category</th>
+                                        <th class="p-3 text-indigo-800">Purchase Price</th>
+                                        <th class="p-3 text-indigo-800">MRP</th>
+                                        <th class="p-3 text-indigo-800">Stock</th>
+                                        <th class="p-3 text-indigo-800">Status</th>
+                                        <th class="p-3 text-indigo-800">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="item in inventory" :key="item.id" class="border-t border-indigo-100">
+                                        <td class="p-3 font-medium text-indigo-900">{{ item.name }}</td>
+                                        <td class="p-3 text-center">{{ item.category }}</td>
+                                        <td class="p-3 text-center">₹{{ item.purchasePrice.toFixed(2) }}</td>
+                                        <td class="p-3 text-center">₹{{ item.mrp.toFixed(2) }}</td>
+                                        <td class="p-3 text-center">{{ item.stock }}</td>
+                                        <td class="p-3 text-center">
+                                            <span :class="item.stock < 10 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'" class="px-2 py-1 rounded-full text-xs">
+                                                {{ item.stock < 10 ? 'Low Stock' : 'In Stock' }}
+                                            </span>
+                                        </td>
+                                        <td class="p-3 text-center">
+                                            <button @click="editMedicine(item)" class="text-indigo-600 hover:text-indigo-800 mr-2">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                            <button @click="deleteMedicine(item.id)" class="text-rose-600 hover:text-rose-800">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    <tr v-if="inventory.length === 0">
+                                        <td colspan="7" class="p-4 text-center text-indigo-700">
+                                            No medicines in inventory
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </transition>
+
+            <!-- Reports Section -->
+            <transition name="fade" mode="out-in">
+                <div v-if="currentTab === 'Reports'" class="space-y-6" key="reports">
+                    <div class="glass-effect rounded-2xl p-6">
+                        <h2 class="text-xl font-semibold text-indigo-800 mb-4">Sales Reports</h2>
+                        
+                        <div class="grid md:grid-cols-3 gap-6 mb-6">
+                            <div class="bg-gradient-to-r from-blue-50 to-cyan-50 p-4 rounded-2xl border border-blue-200">
+                                <div class="text-blue-700 text-sm">Total Revenue</div>
+                                <div class="text-2xl font-bold text-blue-800">₹{{ totalRevenue.toFixed(2) }}</div>
+                                <div class="text-xs text-blue-600 mt-1">All time</div>
+                            </div>
+                            <div class="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-2xl border border-green-200">
+                                <div class="text-green-700 text-sm">Total Profit</div>
+                                <div class="text-2xl font-bold text-green-800">₹{{ totalProfit.toFixed(2) }}</div>
+                                <div class="text-xs text-green-600 mt-1">All time</div>
+                            </div>
+                            <div class="bg-gradient-to-r from-purple-50 to-fuchsia-50 p-4 rounded-2xl border border-purple-200">
+                                <div class="text-purple-700 text-sm">Total Bills</div>
+                                <div class="text-2xl font-bold text-purple-800">{{ totalBills }}</div>
+                                <div class="text-xs text-purple-600 mt-1">All time</div>
+                            </div>
+                        </div>
+
+                        <div class="grid md:grid-cols-2 gap-6">
+                            <div class="bg-white p-4 rounded-2xl border border-indigo-200">
+                                <h3 class="font-semibold text-indigo-800 mb-3">Top Selling Medicines</h3>
+                                <div class="space-y-3">
+                                    <div v-for="(medicine, index) in topMedicines" :key="index" class="flex justify-between items-center">
+                                        <div class="text-indigo-900">{{ medicine.name }}</div>
+                                        <div class="font-medium text-indigo-700">{{ medicine.sales }} units</div>
+                                    </div>
+                                    <div v-if="topMedicines.length === 0" class="text-center text-indigo-700 py-4">
+                                        No sales data available
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-white p-4 rounded-2xl border border-indigo-200">
+                                <h3 class="font-semibold text-indigo-800 mb-3">Recent Transactions</h3>
+                                <div class="space-y-3">
+                                    <div v-for="(transaction, index) in recentTransactions" :key="index" class="flex justify-between items-center p-3 border-b border-indigo-100">
+                                        <div>
+                                            <div class="text-indigo-900">Bill #{{ transaction.billNo }}</div>
+                                            <div class="text-xs text-indigo-600">{{ transaction.date }}</div>
+                                        </div>
+                                        <div class="flex items-center gap-2">
+                                            <div class="font-medium text-indigo-700">₹{{ transaction.amount.toFixed(2) }}</div>
+                                            <button @click="confirmDeleteBill(transaction.id)" class="text-rose-600 hover:text-rose-800 ml-2">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div v-if="recentTransactions.length === 0" class="text-center text-indigo-700 py-4">
+                                        No transactions available
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </transition>
+        </main>
+
+        <!-- Invoice Template (Hidden) -->
+        <div v-if="showInvoice" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div class="bg-white rounded-2xl max-w-2xl w-full max-h-screen overflow-auto">
+                <div class="p-6" id="invoice-content">
+                    <div class="flex justify-between items-start mb-8">
+                        <div>
+                            <h1 class="text-2xl font-bold text-indigo-900">MediTrust Pharmacy</h1>
+                            <p class="text-sm text-gray-600">Main Road, Lalpur, Ranchi, Jharkhand - 834001</p>
+                            <p class="text-sm text-gray-600">Phone: 0651-2220999 | GSTIN: 20ABCDE1234F1Z5</p>
+                        </div>
+                        <div class="text-right">
+                            <h2 class="text-xl font-bold text-indigo-800">TAX INVOICE</h2>
+                            <p class="text-sm text-gray-600">Bill No: INV-{{ String(lastBillId).padStart(5, '0') }}</p>
+                            <p class="text-sm text-gray-600">Date: {{ new Date().toLocaleDateString() }}</p>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-6 grid grid-cols-2 gap-4">
+                        <div>
+                            <h3 class="font-semibold text-gray-700">Bill To:</h3>
+                            <p>{{ currentBill.customerName || 'Walk-in Customer' }}</p>
+                            <p>{{ currentBill.customerPhone || 'N/A' }}</p>
+                        </div>
+                    </div>
+                    
+                    <table class="w-full border-collapse mb-6">
+                        <thead>
+                            <tr class="bg-indigo-100">
+                                <th class="p-2 text-left border border-gray-300">Medicine</th>
+                                <th class="p-2 text-center border border-gray-300">Qty</th>
+                                <th class="p-2 text-center border border-gray-300">Price (₹)</th>
+                                <th class="p-2 text-center border border-gray-300">Amount (₹)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="(item, index) in currentBill.items" :key="index">
+                                <td class="p-2 border border-gray-300">{{ item.name }}</td>
+                                <td class="p-2 text-center border border-gray-300">{{ item.qty }}</td>
+                                <td class="p-2 text-center border border-gray-300">{{ item.price.toFixed(2) }}</td>
+                                <td class="p-2 text-center border border-gray-300">{{ calculateItemTotal(item).toFixed(2) }}</td>
+                            </tr>
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td colspan="3" class="p-2 text-right border border-gray-300 font-semibold">Subtotal:</td>
+                                <td class="p-2 text-center border border-gray-300">{{ calculateSubtotal().toFixed(2) }}</td>
+                            </tr>
+                            <tr v-if="currentBill.discount > 0">
+                                <td colspan="3" class="p-2 text-right border border-gray-300 font-semibold">Discount ({{ currentBill.discount }}%):</td>
+                                <td class="p-2 text-center border border-gray-300">-{{ calculateTotalDiscount().toFixed(2) }}</td>
+                            </tr>
+                            <tr>
+                                <td colspan="3" class="p-2 text-right border border-gray-300 font-semibold">Total:</td>
+                                <td class="p-2 text-center border border-gray-300 font-bold">{{ calculateBillTotal().toFixed(2) }}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                    
+                    <div class="text-center mt-8 text-sm text-gray-600">
+                        <p>Thank you for your purchase!</p>
+                        <p>Medicines once sold cannot be returned or exchanged</p>
+                    </div>
+                </div>
+                <div class="p-4 border-t flex justify-end gap-3">
+                    <button @click="showInvoice = false" class="px-4 py-2 bg-gray-300 rounded-xl">Cancel</button>
+                    <button @click="printInvoice" class="px-4 py-2 bg-indigo-600 text-white rounded-xl">
+                        <i class="fas fa-print mr-2"></i> Print
+                    </button>
+                    <button @click="generatePDF" class="px-4 py-2 bg-emerald-600 text-white rounded-xl">
+                        <i class="fas fa-download mr-2"></i> Download PDF
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Password Modal for Bill Deletion -->
+        <div v-if="showPasswordModal" class="fixed inset-0 password-modal z-50 flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl w-full max-w-md p-6">
+                <h2 class="text-xl font-semibold text-indigo-800 mb-4">Confirm Deletion</h2>
+                <p class="text-sm text-gray-600 mb-4">Please enter the password to delete this bill:</p>
+                
+                <input v-model="passwordInput" type="password" class="w-full rounded-xl border border-indigo-200 px-4 py-3 mb-4 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Enter password">
+                
+                <p v-if="passwordError" class="text-rose-600 text-sm mb-4">{{ passwordError }}</p>
+                
+                <div class="flex justify-end gap-3">
+                    <button @click="cancelDelete" class="px-4 py-2 bg-gray-300 rounded-xl">Cancel</button>
+                    <button @click="deleteBillAfterPassword" class="px-4 py-2 bg-rose-600 text-white rounded-xl">
+                        Delete Bill
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="py-8 text-center text-xs text-indigo-300 mt-8">
+            <p>© 2023 MediTrust Pharmacy. All rights reserved.</p>
+            <p class="mt-1">Main Road, Lalpur, Ranchi, Jharkhand - 834001 | Phone: 0651-2220999</p>
+        </footer>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/vue@3.2.31/dist/vue.global.js"></script>
+    <script>
+        const { createApp, ref, computed, onMounted, watch } = Vue;
+        
+        createApp({
+            setup() {
+                const currentTab = ref('Dashboard');
+                const tabs = ['Dashboard', 'Billing', 'Inventory', 'Reports'];
+                const searchQuery = ref('');
+                const showInvoice = ref(false);
+                const lastBillId = ref(0);
+                const showPasswordModal = ref(false);
+                const passwordInput = ref('');
+                const passwordError = ref('');
+                const billToDelete = ref(null);
+                
+                // Initialize data from localStorage or use defaults
+                const initializeData = () => {
+                    const savedInventory = localStorage.getItem('pharmacyInventory');
+                    const savedBills = localStorage.getItem('pharmacyBills');
+                    
+                    return {
+                        inventory: savedInventory ? JSON.parse(savedInventory) : [
+                            { id: 1, name: 'Dydroease 30Sr Tab', category: 'Tablet', purchasePrice: 950, mrp: 1190, stock: 12 },
+                            { id: 2, name: 'Breact protein powder 400', category: 'Powder', purchasePrice: 450, mrp: 699, stock: 8 },
+                            { id: 3, name: 'C Hope Gel', category: 'Gel', purchasePrice: 150, mrp: 206.4, stock: 15 },
+                            { id: 4, name: 'Gestone 100mg INJ', category: 'Injection', purchasePrice: 100, mrp: 132.5, stock: 3 },
+                            { id: 5, name: 'HUCOG 5000', category: 'Injection', purchasePrice: 300, mrp: 438.31, stock: 5 },
+                            { id: 6, name: 'Argitas Sachet', category: 'Sachet', purchasePrice: 30, mrp: 45, stock: 2 }
+                        ],
+                        bills: savedBills ? JSON.parse(savedBills) : []
+                    };
+                };
+                
+                const data = initializeData();
+                const inventory = ref(data.inventory);
+                const bills = ref(data.bills);
+                
+                // Save to localStorage whenever data changes
+                watch(inventory, (newVal) => {
+                    localStorage.setItem('pharmacyInventory', JSON.stringify(newVal));
+                }, { deep: true });
+                
+                watch(bills, (newVal) => {
+                    localStorage.setItem('pharmacyBills', JSON.stringify(newVal));
+                }, { deep: true });
+                
+                const newMedicine = ref({
+                    id: null,
+                    name: '',
+                    category: '',
+                    purchasePrice: 0,
+                    mrp: 0,
+                    stock: 0
+                });
+                
+                const currentBill = ref({
+                    customerName: '',
+                    customerPhone: '',
+                    items: [],
+                    discount: 0,
+                    date: new Date()
+                });
+                
+                // Computed properties
+                const lowStockItems = computed(() => {
+                    return inventory.value.filter(item => item.stock < 10);
+                });
+                
+                const filteredMedicines = computed(() => {
+                    if (!searchQuery.value) return inventory.value;
+                    return inventory.value.filter(medicine => 
+                        medicine.name.toLowerCase().includes(searchQuery.value.toLowerCase())
+                    );
+                });
+                
+                const todayRevenue = computed(() => {
+                    const today = new Date().toDateString();
+                    return bills.value
+                        .filter(bill => new Date(bill.date).toDateString() === today)
+                        .reduce((total, bill) => total + bill.totalAmount, 0);
+                });
+                
+                const todayProfit = computed(() => {
+                    const today = new Date().toDateString();
+                    return bills.value
+                        .filter(bill => new Date(bill.date).toDateString() === today)
+                        .reduce((total, bill) => total + bill.profit, 0);
+                });
+                
+                const todayBills = computed(() => {
+                    const today = new Date().toDateString();
+                    return bills.value.filter(bill => new Date(bill.date).toDateString() === today).length;
+                });
+                
+                const totalRevenue = computed(() => {
+                    return bills.value.reduce((total, bill) => total + bill.totalAmount, 0);
+                });
+                
+                const totalProfit = computed(() => {
+                    return bills.value.reduce((total, bill) => total + bill.profit, 0);
+                });
+                
+                const totalBills = computed(() => {
+                    return bills.value.length;
+                });
+                
+                // NEW: Computed properties for stock values
+                const totalStockValueAtMRP = computed(() => {
+                    return inventory.value.reduce((total, item) => total + (item.mrp * item.stock), 0);
+                });
+                
+                const totalStockValueAtCost = computed(() => {
+                    return inventory.value.reduce((total, item) => total + (item.purchasePrice * item.stock), 0);
+                });
+                
+                const topMedicines = computed(() => {
+                    const medicineSales = {};
+                    
+                    bills.value.forEach(bill => {
+                        bill.items.forEach(item => {
+                            if (!medicineSales[item.name]) {
+                                medicineSales[item.name] = 0;
+                            }
+                            medicineSales[item.name] += item.qty;
+                        });
+                    });
+                    
+                    return Object.entries(medicineSales)
+                        .map(([name, sales]) => ({ name, sales }))
+                        .sort((a, b) => b.sales - a.sales)
+                        .slice(0, 5);
+                });
+                
+                const recentTransactions = computed(() => {
+                    return bills.value
+                        .slice()
+                        .sort((a, b) => new Date(b.date) - new Date(a.date))
+                        .slice(0, 5)
+                        .map(bill => ({
+                            id: bill.id,
+                            billNo: `INV-${String(bill.id).padStart(5, '0')}`,
+                            date: new Date(bill.date).toLocaleDateString(),
+                            amount: bill.totalAmount
+                        }));
+                });
+                
+                // Methods
+                const searchMedicine = () => {
+                    // Filtering is handled by computed property
+                };
+                
+                const addToBill = (medicine) => {
+                    const existingItem = currentBill.value.items.find(item => item.id === medicine.id);
+                    
+                    if (existingItem) {
+                        if (existingItem.qty < medicine.stock) {
+                            existingItem.qty++;
+                        }
+                    } else {
+                        if (medicine.stock > 0) {
+                            currentBill.value.items.push({
+                                id: medicine.id,
+                                name: medicine.name,
+                                price: medicine.mrp,
+                                purchasePrice: medicine.purchasePrice,
+                                qty: 1,
+                                maxQty: medicine.stock
+                            });
+                        }
+                    }
+                };
+                
+                const removeBillItem = (index) => {
+                    currentBill.value.items.splice(index, 1);
+                };
+                
+                const updateItemQuantity = (index) => {
+                    if (currentBill.value.items[index].qty < 1) {
+                        currentBill.value.items[index].qty = 1;
+                    }
+                    
+                    const medicine = inventory.value.find(item => item.id === currentBill.value.items[index].id);
+                    if (currentBill.value.items[index].qty > medicine.stock) {
+                        currentBill.value.items[index].qty = medicine.stock;
+                    }
+                };
+                
+                const validateDiscount = () => {
+                    if (currentBill.value.discount < 0) {
+                        currentBill.value.discount = 0;
+                    }
+                    
+                    if (currentBill.value.discount > 100) {
+                        currentBill.value.discount = 100;
+                    }
+                };
+                
+                const calculateItemTotal = (item) => {
+                    return item.price * item.qty;
+                };
+                
+                const calculateSubtotal = () => {
+                    return currentBill.value.items.reduce((total, item) => total + calculateItemTotal(item), 0);
+                };
+                
+                const calculateTotalDiscount = () => {
+                    return calculateSubtotal() * (currentBill.value.discount / 100);
+                };
+                
+                const calculateBillTotal = () => {
+                    return calculateSubtotal() - calculateTotalDiscount();
+                };
+                
+                const calculateItemProfit = (item) => {
+                    const cost = item.purchasePrice * item.qty;
+                    const revenue = calculateItemTotal(item);
+                    return revenue - cost;
+                };
+                
+                const completeSale = () => {
+                    if (currentBill.value.items.length === 0) return;
+                    
+                    // Update inventory stock
+                    currentBill.value.items.forEach(item => {
+                        const medicine = inventory.value.find(m => m.id === item.id);
+                        if (medicine) {
+                            medicine.stock -= item.qty;
+                        }
+                    });
+                    
+                    // Calculate profit (without discount affecting cost)
+                    const profit = currentBill.value.items.reduce((total, item) => total + calculateItemProfit(item), 0);
+                    
+                    // Create bill record
+                    const newBill = {
+                        id: bills.value.length + 1,
+                        customerName: currentBill.value.customerName,
+                        customerPhone: currentBill.value.customerPhone,
+                        items: [...currentBill.value.items],
+                        subtotal: calculateSubtotal(),
+                        discount: currentBill.value.discount,
+                        discountAmount: calculateTotalDiscount(),
+                        totalAmount: calculateBillTotal(),
+                        profit: profit,
+                        date: new Date()
+                    };
+                    
+                    bills.value.push(newBill);
+                    lastBillId.value = newBill.id;
+                    
+                    // Show invoice
+                    showInvoice.value = true;
+                };
+                
+                const printInvoice = () => {
+                    const printContent = document.getElementById('invoice-content').innerHTML;
+                    const originalContent = document.body.innerHTML;
+                    
+                    document.body.innerHTML = printContent;
+                    window.print();
+                    document.body.innerHTML = originalContent;
+                    window.location.reload();
+                };
+                
+                const generatePDF = () => {
+                    const { jsPDF } = window.jspdf;
+                    const doc = new jsPDF();
+                    
+                    html2canvas(document.getElementById('invoice-content')).then(canvas => {
+                        const imgData = canvas.toDataURL('image/png');
+                        const imgWidth = doc.internal.pageSize.getWidth();
+                        let imgHeight = canvas.height * imgWidth / canvas.width;
+                        
+                        // Add a new page if content is too long
+                        const pageHeight = doc.internal.pageSize.getHeight();
+                        if (imgHeight > pageHeight) {
+                            const remainingHeight = imgHeight - pageHeight;
+                            const pages = Math.ceil(remainingHeight / pageHeight) + 1;
+                            
+                            doc.addImage(imgData, 'PNG', 0, 0, imgWidth, pageHeight);
+                            
+                            for (let i = 1; i < pages; i++) {
+                                doc.addPage();
+                                const y = -pageHeight * i;
+                                doc.addImage(imgData, 'PNG', 0, y, imgWidth, imgHeight);
+                            }
+                        } else {
+                            doc.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+                        }
+                        
+                        doc.save(`MediTrust-Invoice-${String(lastBillId.value).padStart(5, '0')}.pdf`);
+                    });
+                };
+                
+                const addMedicine = () => {
+                    if (!newMedicine.value.name || !newMedicine.value.category || 
+                        newMedicine.value.purchasePrice <= 0 || newMedicine.value.mrp <= 0 || 
+                        newMedicine.value.stock < 0) {
+                        alert('Please fill all fields with valid values');
+                        return;
+                    }
+                    
+                    if (newMedicine.value.id) {
+                        // Update existing medicine
+                        const index = inventory.value.findIndex(item => item.id === newMedicine.value.id);
+                        if (index !== -1) {
+                            inventory.value[index] = {...newMedicine.value};
+                        }
+                    } else {
+                        // Add new medicine
+                        const newId = inventory.value.length > 0 ? Math.max(...inventory.value.map(item => item.id)) + 1 : 1;
+                        inventory.value.push({
+                            id: newId,
+                            name: newMedicine.value.name,
+                            category: newMedicine.value.category,
+                            purchasePrice: parseFloat(newMedicine.value.purchasePrice),
+                            mrp: parseFloat(newMedicine.value.mrp),
+                            stock: parseInt(newMedicine.value.stock)
+                        });
+                    }
+                    
+                    // Reset form
+                    newMedicine.value = {
+                        id: null,
+                        name: '',
+                        category: '',
+                        purchasePrice: 0,
+                        mrp: 0,
+                        stock: 0
+                    };
+                };
+                
+                const editMedicine = (medicine) => {
+                    newMedicine.value = {...medicine};
+                };
+                
+                const deleteMedicine = (id) => {
+                    if (confirm('Are you sure you want to delete this medicine?')) {
+                        inventory.value = inventory.value.filter(item => item.id !== id);
+                    }
+                };
+                
+                // NEW: Password protected bill deletion
+                const confirmDeleteBill = (billId) => {
+                    billToDelete.value = billId;
+                    showPasswordModal.value = true;
+                    passwordInput.value = '';
+                    passwordError.value = '';
+                };
+                
+                const cancelDelete = () => {
+                    showPasswordModal.value = false;
+                    billToDelete.value = null;
+                    passwordInput.value = '';
+                    passwordError.value = '';
+                };
+                
+                const deleteBillAfterPassword = () => {
+                    if (passwordInput.value === 'Anuj') {
+                        // Find the bill to delete
+                        const billIndex = bills.value.findIndex(bill => bill.id === billToDelete.value);
+                        
+                        if (billIndex !== -1) {
+                            const bill = bills.value[billIndex];
+                            
+                            // Restore inventory stock
+                            bill.items.forEach(item => {
+                                const medicine = inventory.value.find(m => m.id === item.id);
+                                if (medicine) {
+                                    medicine.stock += item.qty;
+                                }
+                            });
+                            
+                            // Remove the bill
+                            bills.value.splice(billIndex, 1);
+                            
+                            // Close modal
+                            showPasswordModal.value = false;
+                            billToDelete.value = null;
+                            passwordInput.value = '';
+                        }
+                    } else {
+                        passwordError.value = 'Incorrect password. Please try again.';
+                    }
+                };
+                
+                return {
+                    currentTab,
+                    tabs,
+                    searchQuery,
+                    inventory,
+                    newMedicine,
+                    currentBill,
+                    lowStockItems,
+                    filteredMedicines,
+                    todayRevenue,
+                    todayProfit,
+                    todayBills,
+                    totalRevenue,
+                    totalProfit,
+                    totalBills,
+                    totalStockValueAtMRP,
+                    totalStockValueAtCost,
+                    topMedicines,
+                    recentTransactions,
+                    showInvoice,
+                    lastBillId,
+                    showPasswordModal,
+                    passwordInput,
+                    passwordError,
+                    searchMedicine,
+                    addToBill,
+                    removeBillItem,
+                    updateItemQuantity,
+                    validateDiscount,
+                    calculateItemTotal,
+                    calculateSubtotal,
+                    calculateTotalDiscount,
+                    calculateBillTotal,
+                    completeSale,
+                    addMedicine,
+                    editMedicine,
+                    deleteMedicine,
+                    confirmDeleteBill,
+                    cancelDelete,
+                    deleteBillAfterPassword,
+                    printInvoice,
+                    generatePDF
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
